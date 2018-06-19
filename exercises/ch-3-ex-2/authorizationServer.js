@@ -228,7 +228,7 @@ app.post("/token", function(req, res){
 					console.log('Invalid client using a refresh token, expected %s got %s', token.client_id, clientId);
 					nosql.remove(function(found) { return (found == token); }, function () {} );
 					res.status(400).end();
-					return
+					return;
 				}
 				console.log("We found a matching refresh token: %s", req.body.refresh_token);
 				var access_token = randomstring.generate();

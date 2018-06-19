@@ -122,8 +122,10 @@ app.post('/approve', function(req, res) {
 			delete urlParsed.search; // this is a weird behavior of the URL library
 			urlParsed.query = urlParsed.query || {};
 			urlParsed.query.code = code;
-			urlParsed.query.state = query.state; 
-			res.redirect(url.format(urlParsed));
+			urlParsed.query.state = query.state;
+			var redirectUrl =  url.format(urlParsed);
+			console.log("redirect", redirectUrl);
+			res.redirect(redirectUrl);
 			return;
 		} else {
 			// we got a response type we don't understand
