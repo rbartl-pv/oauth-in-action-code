@@ -27,9 +27,11 @@ var authServer = {
 // client information
 var clients = [
 
-  /*
-   * Enter client information here
-   */
+	{
+		"client_id": "oauth-client-1",
+		"client_secret": "oauth-client-secret-1",
+		"redirect_uris": ["http://localhost:9000/callback"]
+	}
 ];
 
 var codes = {};
@@ -46,26 +48,71 @@ app.get('/', function(req, res) {
 
 app.get("/authorize", function(req, res){
 	
-	/*
-	 * Process the request, validate the client, and send the user to the approval page
-	 */
+	var client = getClient(req.query.client_id);
 	
+	if (!client) {
+		console.log('Unknown client %s', req.query.client_id);
+		res.render('error', {error: 'Unknown client'});
+		return;
+	} else if (!__.contains(client.redirect_uris, req.query.redirect_uri)) {
+		console.log('Mismatched redirect URI, expected %s got %s', client.redirect_uris, req.query.redirect_uri);
+		res.render('error', {error: 'Invalid redirect URI'});
+		return;
+	} else {
+		
+		var reqid = randomstring.generate(8);
+		
+		requests[reqid] = req.query;
+		
+		res.render('approve', {client: client, reqid: reqid });
+		return;
+	}
+
 });
 
 app.post('/approve', function(req, res) {
 
-	/*
-	 * Process the results of the approval page, authorize the client
-	 */
+	var reqid = req.body.reqid;
+	var query = requests[reqid];
+	delete requests[reqid];
+
+	if (!query) {
+		// there was no matching saved request, this is an error
+		res.render('error', {error: 'No matching authorization request'});
+		return;
+	}
 	
-});
-
-app.post("/token", function(req, res){
-
-	/*
-	 * Process the request, issue an access token
-	 */
-
+	if (req.body.approve) {
+		if (query.response_type == 'code') {
+			// user approved access
+			var code = randomstring.generate(8);
+			
+			// save the code and request for later
+			codes[code] = { request: query };
+		
+			var urlParsed = buildUrl(query.redirect_uri, {
+				code: code,
+				state: query.state
+			});
+			res.redirect(urlParsed);
+			return;
+		} else {
+			// we got a response type we don't understand
+			var urlParsed = buildUrl(query.redirect_uri, {
+				error: 'unsupported_response_type'
+			});
+			res.redirect(urlParsed);
+			return;
+		}
+	} else {
+		// user denied access
+		var urlParsed = buildUrl(query.redirect_uri, {
+			error: 'access_denied'
+		});
+		res.redirect(urlParsed);
+		return;
+	}
+	
 });
 
 var buildUrl = function(base, options, hash) {
