@@ -30,12 +30,8 @@ var clients = [
 	{
 		"client_id": "oauth-client-1",
 		"client_secret": "oauth-client-secret-1",
-		"redirect_uris": ["http://localhost:9000/callback"]
-
-		/*
-		 * Add a set of allowed scopes for this client
-		 */
-
+		"redirect_uris": ["http://localhost:9000/callback"],
+		"scope": "foo bar"
 	}
 ];
 
@@ -65,19 +61,21 @@ app.get("/authorize", function(req, res){
 		return;
 	} else {
 		
-		/*
-		 * Validate that the set of scopes the client is requesting 
-		 * aligns with the set of scopes the client is registered for.
-		 */
-		
+		var rscope = req.query.scope ? req.query.scope.split(' ') : undefined;
+		var cscope = client.scope ? client.scope.split(' ') : undefined;
+		if (__.difference(rscope, cscope).length > 0) {
+			var urlParsed = buildUrl(req.query.redirect_uri, {
+				error: 'invalid_scope'
+			});
+			res.redirect(urlParsed);
+			return;
+		}
+
 		var reqid = randomstring.generate(8);
 		
 		requests[reqid] = req.query;
 		
-		/*
-		 * Send the requested scopes to the approval page for rendering
-		 */
-		res.render('approve', {client: client, reqid: reqid });
+		res.render('approve', {client: client, reqid: reqid, scope: rscope});
 		return;
 	}
 
@@ -88,6 +86,7 @@ app.post('/approve', function(req, res) {
 	var reqid = req.body.reqid;
 	var query = requests[reqid];
 	delete requests[reqid];
+	var urlParsed;
 
 	if (!query) {
 		// there was no matching saved request, this is an error
@@ -99,22 +98,24 @@ app.post('/approve', function(req, res) {
 		if (query.response_type == 'code') {
 			// user approved access
 
-			/*
-			 * Make sure the approved scopes from the form are allowed for this client
-			 */
-
+			var rscope = getScopesFromForm(req.body);
+			var client = getClient(query.client_id);
+			var cscope = client.scope ? client.scope.split(' ') : undefined;			
+			if (__.difference(rscope, cscope).length > 0) {
+				urlParsed = buildUrl(query.redirect_uri, {
+					error: 'invalid_scope'
+				});
+				res.redirect(urlParsed);
+				return;
+			}
 
 			var code = randomstring.generate(8);
 			
 			// save the code and request for later
 			
-			/*
-			 * Save the approved scopes as part of this object
-			 */
-			
-			codes[code] = { request: query };
+			codes[code] = { request: query, scope: rscope };
 		
-			var urlParsed = buildUrl(query.redirect_uri, {
+			urlParsed = buildUrl(query.redirect_uri, {
 				code: code,
 				state: query.state
 			});
@@ -122,7 +123,7 @@ app.post('/approve', function(req, res) {
 			return;
 		} else {
 			// we got a response type we don't understand
-			var urlParsed = buildUrl(query.redirect_uri, {
+			urlParsed = buildUrl(query.redirect_uri, {
 				error: 'unsupported_response_type'
 			});
 			res.redirect(urlParsed);
@@ -130,7 +131,7 @@ app.post('/approve', function(req, res) {
 		}
 	} else {
 		// user denied access
-		var urlParsed = buildUrl(query.redirect_uri, {
+		urlParsed = buildUrl(query.redirect_uri, {
 			error: 'access_denied'
 		});
 		res.redirect(urlParsed);
@@ -141,12 +142,14 @@ app.post('/approve', function(req, res) {
 
 app.post("/token", function(req, res){
 	
-	var auth = req.headers['authorization'];
+	var auth = req.headers.authorization;
+	var clientId;
+	var clientSecret;
 	if (auth) {
 		// check the auth header
 		var clientCredentials = decodeClientCredentials(auth);
-		var clientId = clientCredentials.id;
-		var clientSecret = clientCredentials.secret;
+		clientId = clientCredentials.id;
+		clientSecret = clientCredentials.secret;
 	}
 	
 	// otherwise, check the post body
@@ -158,8 +161,8 @@ app.post("/token", function(req, res){
 			return;
 		}
 		
-		var clientId = req.body.client_id;
-		var clientSecret = req.body.client_secret;
+		clientId = req.body.client_id;
+		clientSecret = req.body.client_secret;
 	}
 	
 	var client = getClient(clientId);
@@ -183,23 +186,15 @@ app.post("/token", function(req, res){
 			delete codes[req.body.code]; // burn our code, it's been used
 			if (code.request.client_id == clientId) {
 
-				/*
-				 * Save the approved scopes as part of the token's structure
-				 */
-
 				var access_token = randomstring.generate();
 				var refresh_token = randomstring.generate();
 
-				nosql.insert({ access_token: access_token, client_id: clientId });
-				nosql.insert({ refresh_token: refresh_token, client_id: clientId });
+				nosql.insert({ access_token: access_token, client_id: clientId, scope: code.scope });
+				nosql.insert({ refresh_token: refresh_token, client_id: clientId, scope: code.scope });
 
 				console.log('Issuing access token %s', access_token);
-
-				/*
-				 * Return scopes as part of the token response
-				 */
 				
-				var token_response = { access_token: access_token, token_type: 'Bearer',  refresh_token: refresh_token };
+				var token_response = { access_token: access_token, token_type: 'Bearer',  refresh_token: refresh_token, scope: code.scope.join(' ') };
 
 				res.status(200).json(token_response);
 				console.log('Issued tokens for code %s', req.body.code);
