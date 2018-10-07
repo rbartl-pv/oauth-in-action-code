@@ -87,6 +87,10 @@ app.post('/approve', function(req, res) {
 	var reqid = req.body.reqid;
 	var query = requests[reqid];
 	delete requests[reqid];
+	var rscope;
+	var client;
+	var cscope;
+	var urlParsed;
 
 	if (!query) {
 		// there was no matching saved request, this is an error
@@ -95,14 +99,15 @@ app.post('/approve', function(req, res) {
 	}
 	
 	if (req.body.approve) {
+
 		if (query.response_type == 'code') {
 			// user approved access
 
-			var rscope = getScopesFromForm(req.body);
-			var client = getClient(query.client_id);
-			var cscope = client.scope ? client.scope.split(' ') : undefined;
+			rscope = getScopesFromForm(req.body);
+			client = getClient(query.client_id);
+			cscope = client.scope ? client.scope.split(' ') : undefined;
 			if (__.difference(rscope, cscope).length > 0) {
-				var urlParsed = buildUrl(query.redirect_uri, {
+				urlParsed = buildUrl(query.redirect_uri, {
 					error: 'invalid_scope'
 				});
 				res.redirect(urlParsed);
@@ -115,7 +120,7 @@ app.post('/approve', function(req, res) {
 			
 			codes[code] = { request: query, scope: rscope };
 		
-			var urlParsed = buildUrl(query.redirect_uri, {
+			urlParsed = buildUrl(query.redirect_uri, {
 				code: code,
 				state: query.state
 			});
@@ -123,15 +128,36 @@ app.post('/approve', function(req, res) {
 			return;
 		
 		
-		/*
-		 * Implement response_type=token here
-	 	 */
+		} else if (query.response_type == 'token') {
 		
+			rscope = getScopesFromForm(req.body);
+			client = getClient(query.client_id);
+			cscope = client.scope ? client.scope.split(' ') : undefined;
+			if (__.difference(rscope, cscope).length > 0) {
+				urlParsed = buildUrl(query.redirect_uri,
+					{},
+					qs.stringify({error: 'invalid_scope'})
+				);
+				res.redirect(urlParsed);
+				return;
+			}
+			var access_token = randomstring.generate();
+			nosql.insert({ access_token: access_token, client_id: client.client_id, scope: rscope });
+
+			var token_response = { access_token: access_token, token_type: 'Bearer', scope: rscope.join(' ') };
+			if (query.state) {
+				token_response.state = query.state;
+			}
 		
-		
+			urlParsed = buildUrl(query.redirect_uri,
+				{},
+				qs.stringify(token_response)
+			);
+			res.redirect(urlParsed);
+			return;
 		} else {
 			// we got a response type we don't understand
-			var urlParsed = buildUrl(query.redirect_uri, {
+			urlParsed = buildUrl(query.redirect_uri, {
 				error: 'unsupported_response_type'
 			});
 			res.redirect(urlParsed);
@@ -139,7 +165,7 @@ app.post('/approve', function(req, res) {
 		}
 	} else {
 		// user denied access
-		var urlParsed = buildUrl(query.redirect_uri, {
+		urlParsed = buildUrl(query.redirect_uri, {
 			error: 'access_denied'
 		});
 		res.redirect(urlParsed);
@@ -150,12 +176,16 @@ app.post('/approve', function(req, res) {
 
 app.post("/token", function(req, res){
 	
-	var auth = req.headers['authorization'];
+	var auth = req.headers.authorization;
+	var clientCredentials;
+	var clientId;
+	var clientSecret;
+
 	if (auth) {
 		// check the auth header
-		var clientCredentials = decodeClientCredentials(auth);
-		var clientId = clientCredentials.id;
-		var clientSecret = clientCredentials.secret;
+		clientCredentials = decodeClientCredentials(auth);
+		clientId = clientCredentials.id;
+		clientSecret = clientCredentials.secret;
 	}
 	
 	// otherwise, check the post body
@@ -167,8 +197,8 @@ app.post("/token", function(req, res){
 			return;
 		}
 		
-		var clientId = req.body.client_id;
-		var clientSecret = req.body.client_secret;
+		clientId = req.body.client_id;
+		clientSecret = req.body.client_secret;
 	}
 	
 	var client = getClient(clientId);
