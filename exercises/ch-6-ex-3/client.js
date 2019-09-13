@@ -77,7 +77,7 @@ app.post('/username_password', function(req, res) {
 		scope = body.scope;
 		res.render('index', {access_token: access_token, refresh_token: refresh_token, scope: scope});
 	} else {
-		res.render('error', {error: 'Unable to fetch access token, serverresponse: ' + tokRes.statusCode})
+		res.render('error', {error: 'Unable to fetch access token, serverresponse: ' + tokRes.statusCode});
 	}
 
 });
