@@ -28,7 +28,7 @@ var authServer = {
 
 var getAccessToken = function(req, res, next) {
 	// check the auth header first
-	var auth = req.headers['authorization'];
+	var auth = req.headers.authorization;
 	var inToken = null;
 	if (auth && auth.toLowerCase().indexOf('bearer') == 0) {
 		inToken = auth.slice('bearer '.length);
@@ -36,7 +36,7 @@ var getAccessToken = function(req, res, next) {
 		// not in the header, check in the form body
 		inToken = req.body.access_token;
 	} else if (req.query && req.query.access_token) {
-		inToken = req.query.access_token
+		inToken = req.query.access_token;
 	}
 	
 	console.log('Incoming token: %s', inToken);
